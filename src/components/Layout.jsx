@@ -21,7 +21,9 @@ import {
   VpnKey as KeyIcon,
   Language as LanguageIcon,
   Palette as PaletteIcon,
-  Email as EmailIcon
+  Email as EmailIcon,
+  Shield as ShieldIcon,
+
 } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query'; // ✅ Add useQueryClien
 import { auth } from '@spidy092/auth-client';
@@ -73,7 +75,14 @@ const navigationItems = [
     label: 'Preferences',
     icon: <SettingsIcon />,
     description: 'Language, theme, and display'
-  }
+  },
+  {
+  path: '/trusted-devices',
+  label: 'Trusted Devices',
+  icon: <ShieldIcon />,
+  description: 'Manage your registered devices'
+}
+
 ];
 
 function Layout() {

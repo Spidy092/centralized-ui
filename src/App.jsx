@@ -17,6 +17,7 @@ import Notifications from "./components/Notifications";
 import PrivacySettings from "./components/PrivacySettings";
 import Preferences from "./components/Preferences";
 import ProtectedRoute from "./components/ProtectedRoute";
+import TrustedDevices from './pages/TrustedDevices';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="profile" element={<Profile />} />
               <Route path="security" element={<SecuritySettings />} />
               <Route path="sessions" element={<Sessions />} />
+              <Route path="/trusted-devices" element={<TrustedDevices />} />
               <Route path="applications" element={<Applications />} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="privacy" element={<PrivacySettings />} />
