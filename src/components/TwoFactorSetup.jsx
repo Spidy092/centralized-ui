@@ -12,7 +12,7 @@ import {
   CheckCircle as CheckCircleIcon, Info as InfoIcon
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { auth } from '@spidy092/auth-client';
+import { securityApi } from '../api/security.api';
 
 const steps = ['Setup Instructions', 'Configure in Keycloak', 'Verification Complete'];
 
@@ -24,18 +24,17 @@ function TwoFactorAuth({ open, onClose, onSuccess }) {
   // Get current 2FA status
   const { data: twoFAStatus, refetch: refetchStatus } = useQuery({
     queryKey: ['2fa-status'],
-    queryFn: () => auth.api.get('/account/2fa/status').then(res => res.data),
+    queryFn: securityApi.getStatus,
     enabled: open
   });
 
-  // mutationFn: () => auth.api.post('/account/2fa/setup-redirect'),
-
   // Setup redirect mutation
   const setupMutation = useMutation({
-    mutationFn: () => auth.api.post('/account/2fa/setup-redirect'),
+    mutationKey: ['2fa', 'setup-redirect'],
+    mutationFn: securityApi.start2FASetup,
     onSuccess: (response) => {
       // Open Keycloak Account Console in new tab
-      const newTab = window.open(response.data.redirectUrl, '_blank');
+      const newTab = window.open(response.redirectUrl, '_blank');
       if (newTab) {
         setActiveStep(1);
         // Start polling to check if setup is complete
@@ -51,7 +50,8 @@ function TwoFactorAuth({ open, onClose, onSuccess }) {
 
   // Disable 2FA mutation
   const disableMutation = useMutation({
-    mutationFn: () => auth.api.post('/account/2fa/disable'),
+    mutationKey: ['2fa', 'disable'],
+    mutationFn: securityApi.disable2FA,
     onSuccess: () => {
       queryClient.invalidateQueries(['2fa-status']);
       queryClient.invalidateQueries(['security-settings']);
@@ -62,9 +62,10 @@ function TwoFactorAuth({ open, onClose, onSuccess }) {
 
   // Check if setup is complete
   const checkSetupMutation = useMutation({
-    mutationFn: () => auth.api.get('/account/2fa/check'),
+    mutationKey: ['2fa', 'check'],
+    mutationFn: securityApi.check2FAConfigured,
     onSuccess: (response) => {
-      if (response.data.configured) {
+      if (response.configured) {
         setActiveStep(2);
         setTimeout(() => {
           queryClient.invalidateQueries(['2fa-status']);
@@ -81,8 +82,8 @@ function TwoFactorAuth({ open, onClose, onSuccess }) {
     setIsChecking(true);
     const pollInterval = setInterval(async () => {
       try {
-        const response = await auth.api.get('/account/2fa/check');
-        if (response.data.configured) {
+        const response = await securityApi.check2FAConfigured();
+        if (response.configured) {
           clearInterval(pollInterval);
           setIsChecking(false);
           setActiveStep(2);

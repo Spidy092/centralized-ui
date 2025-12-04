@@ -1,103 +1,66 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { Suspense, lazy } from 'react';
+import ErrorBoundary from './components/system/ErrorBoundary';
+import { ToastProvider } from './context/ToastContext';
+import { ThemeModeProvider } from './context/ThemeContext';
+import { queryClient } from './config/reactQueryConfig';
+import './config/authConfig';
+import ProtectedRoute from './components/ProtectedRoute';
+import LoadingSpinner from './components/LoadingSpinner';
 
-// account-ui/src/App.jsx
-
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-
-import "./config/authConfig";
-import Login from "./pages/Login";
-import Callback from "./pages/Callback";
-import Layout from "./components/Layout";
-import Profile from "./components/Profile";
-import Applications from "./components/Applications";
-import Sessions from "./components/Sessions";
-import SecuritySettings from "./components/SecuritySettings";
-import Notifications from "./components/Notifications";
-import PrivacySettings from "./components/PrivacySettings";
-import Preferences from "./components/Preferences";
-import ProtectedRoute from "./components/ProtectedRoute";
-import TrustedDevices from './pages/TrustedDevices';
-
-// Create React Query client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 2,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-    },
-  },
-});
-
-// Create theme
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-  shape: {
-    borderRadius: 12,
-  },
-  components: {
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        },
-      },
-    },
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: 'none',
-          fontWeight: 600,
-        },
-      },
-    },
-  },
-});
+const Login = lazy(() => import('./pages/Login'));
+const Callback = lazy(() => import('./pages/Callback'));
+const AppLayout = lazy(() => import('./layouts/AppLayout'));
+const IdentityDashboard = lazy(() => import('./pages/IdentityDashboard'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const SecurityCenter = lazy(() => import('./pages/SecuritySettings'));
+const SessionsPage = lazy(() => import('./pages/Sessions'));
+const TrustedDevicesPage = lazy(() => import('./pages/TrustedDevices'));
+const ActivityDashboard = lazy(() => import('./pages/ActivityDashboard'));
+const NotificationsPage = lazy(() => import('./pages/Notifications'));
+const PreferencesPage = lazy(() => import('./pages/Preferences'));
+const PrivacyPage = lazy(() => import('./pages/PrivacySettings'));
+const ApplicationsPage = lazy(() => import('./pages/Applications'));
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/callback" element={<Callback />} />
-
-            {/* Protected routes with Layout */}
-            <Route path="/" element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }>
-              {/* Default redirect to profile */}
-              <Route index element={<Navigate to="/profile" replace />} />
-
-              {/* Account management routes */}
-              <Route path="profile" element={<Profile />} />
-              <Route path="security" element={<SecuritySettings />} />
-              <Route path="sessions" element={<Sessions />} />
-              <Route path="/trusted-devices" element={<TrustedDevices />} />
-              <Route path="applications" element={<Applications />} />
-              <Route path="notifications" element={<Notifications />} />
-              <Route path="privacy" element={<PrivacySettings />} />
-              <Route path="preferences" element={<Preferences />} />
-            </Route>
-
-            {/* Catch all redirect */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </ThemeProvider>
+      <ThemeModeProvider>
+        <ToastProvider>
+          <ErrorBoundary>
+            <BrowserRouter>
+              <Suspense fallback={<LoadingSpinner message="Preparing console…" />}> 
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/callback" element={<Callback />} />
+                  <Route
+                    path="/"
+                    element={(
+                      <ProtectedRoute>
+                        <AppLayout />
+                      </ProtectedRoute>
+                    )}
+                  >
+                    <Route index element={<Navigate to="/dashboard" replace />} />
+                    <Route path="dashboard" element={<IdentityDashboard />} />
+                    <Route path="profile" element={<ProfilePage />} />
+                    <Route path="security" element={<SecurityCenter />} />
+                    <Route path="sessions" element={<SessionsPage />} />
+                    <Route path="trusted-devices" element={<TrustedDevicesPage />} />
+                    <Route path="activity" element={<ActivityDashboard />} />
+                    <Route path="applications" element={<ApplicationsPage />} />
+                    <Route path="notifications" element={<NotificationsPage />} />
+                    <Route path="privacy" element={<PrivacyPage />} />
+                    <Route path="preferences" element={<PreferencesPage />} />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </ErrorBoundary>
+        </ToastProvider>
+      </ThemeModeProvider>
     </QueryClientProvider>
   );
 }

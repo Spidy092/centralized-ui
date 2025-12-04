@@ -1,8 +1,24 @@
-export default function LoadingSpinner({ message = 'Loading...' }) {
+import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+
+export default function LoadingSpinner({ message = 'Loading…', compact = false }) {
   return (
-    <div className="flex justify-center items-center h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      <p className="ml-4 text-blue-700">{message}</p>
-    </div>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: compact ? 120 : '60vh',
+        width: '100%',
+      }}
+    >
+      <Stack direction="row" spacing={2} alignItems="center">
+        <CircularProgress color="primary" thickness={4} />
+        {message && (
+          <Typography variant="body2" color="text.secondary">
+            {message}
+          </Typography>
+        )}
+      </Stack>
+    </Box>
   );
 }

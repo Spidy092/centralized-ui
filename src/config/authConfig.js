@@ -87,7 +87,7 @@ window.addEventListener('beforeunload', () => {
 console.log('🔧 Account UI Auth configured:', {
   clientKey: 'account-ui',
   mode: 'ROUTER',
-  authBaseUrl: 'http://localhost:4000/auth'
+  authBaseUrl: 'http://auth.local.test:4000/auth'
 });
 
 export default config;

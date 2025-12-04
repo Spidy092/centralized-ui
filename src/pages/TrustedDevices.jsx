@@ -1,660 +1,252 @@
-// src/pages/TrustedDevices.jsx
-
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Box, Card, CardContent, Typography, Button, Chip, IconButton, Dialog,
-  DialogTitle, DialogContent, DialogActions, Alert, List, ListItem,
-  ListItemText, ListItemAvatar, Avatar, Divider, Grid, Tooltip,
-  CircularProgress, Badge, Switch, FormControlLabel, Paper, Stack
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Grid,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  Laptop as LaptopIcon,
-  PhoneAndroid as PhoneIcon,
-  Tablet as TabletIcon,
-  DesktopWindows as DesktopIcon,
-  Delete as DeleteIcon,
-  Warning as WarningIcon,
-  CheckCircle as CheckCircleIcon,
-  Info as InfoIcon,
-  Shield as ShieldIcon,
-  LocationOn as LocationIcon,
-  AccessTime as AccessTimeIcon,
-  MoreVert as MoreVertIcon,
-  Verified as VerifiedIcon,
-  Refresh as RefreshIcon,
-  ReportProblem as AlertTriangleIcon
+  DevicesOtherRounded as DeviceIcon,
+  DeleteRounded as DeleteIcon,
+  ShieldRounded as ShieldIcon,
+  RefreshRounded as RefreshIcon,
+  CheckCircleRounded as CheckIcon,
+  ReportProblemRounded as WarningIcon,
 } from '@mui/icons-material';
-import { formatDistanceToNow, format } from 'date-fns';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { auth } from '@spidy092/auth-client';
+import { motion } from 'framer-motion';
+import { formatDistanceToNow } from 'date-fns';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { useDevices } from '../hooks/useDevices';
+import { useQueryClient } from '@tanstack/react-query';
 
-let api = auth.api;
+const MotionCard = motion.create(Card);
 
-function TrustedDevices() {
-  // State management
+const trustStatusCopy = {
+  trusted: { label: 'Trusted', color: 'success' },
+  pending: { label: 'Pending review', color: 'warning' },
+  revoked: { label: 'Revoked', color: 'default' },
+};
+
+export default function TrustedDevicesPage() {
   const queryClient = useQueryClient();
+  const {
+    data: devices,
+    isPending,
+    error,
+    trustDevice,
+    revokeDevice,
+    revokeAll,
+    registerDevice,
+    trusting,
+    revoking,
+    revokingAll,
+    registering,
+  } = useDevices();
+
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
-  const [revokeAllDialogOpen, setRevokeAllDialogOpen] = useState(false);
-  const [currentDeviceId, setCurrentDeviceId] = useState(null);
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState('success');
-  const [autoTrustEnabled, setAutoTrustEnabled] = useState(false);
+  const [confirmRevokeAll, setConfirmRevokeAll] = useState(false);
 
-  // Fetch trusted devices
- const { data: devicesData = {}, isLoading, error, refetch } = useQuery({
-  queryKey: ['trusted-devices'],
-  queryFn: async () => {
-    const res = await api.get('/trusted-devices');
-    // API returns { success: true, data: [...], count: 2 }
-    const devicesArray = res.data.data || [];
-    return {
-      devices: devicesArray,
-      count: res.data.count || 0,
-      insights: {
-        total: devicesArray.length,
-        trusted: devicesArray.filter(d => d.trust_status === 'trusted').length,
-        pending: devicesArray.filter(d => d.trust_status === 'pending').length,
-        revoked: devicesArray.filter(d => d.trust_status === 'revoked').length,
-        exposureLevel: 'Low'
-      }
-    };
-  },
-  staleTime: 2 * 60 * 1000,
-  retry: 2
-});
+  const summary = useMemo(() => {
+    const total = devices.length;
+    const trusted = devices.filter((device) => device.trust_status === 'trusted').length;
+    const pending = devices.filter((device) => device.trust_status === 'pending').length;
+    const highRisk = devices.filter((device) => device.risk_level === 'HIGH').length;
+    return { total, trusted, pending, highRisk };
+  }, [devices]);
 
-const devices = devicesData.devices || [];
-const securityInsights = devicesData.insights || {};
-
-
-
-  
-
-  // Register current device on component mount
-  useEffect(() => {
-    registerCurrentDevice();
-  }, []);
-
-  const registerCurrentDevice = async () => {
-    try {
-      const deviceData = {
-        screenWidth: window.screen.width,
-        screenHeight: window.screen.height,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        colorDepth: window.screen.colorDepth,
-        location: null
-      };
-
-      const response = await api.post('/trusted-devices/register', deviceData);
-
-      if (response.data.success) {
-        setCurrentDeviceId(response.data.device.id);
-
-        // Show notification if risk level is elevated
-        if (response.data.device.created && response.data.security?.riskLevel === 'HIGH') {
-          showSnackbar(
-            'New device registered. Please review your security settings.',
-            'warning'
-          );
-        }
-      }
-    } catch (error) {
-      console.error('Failed to register device:', error);
-    }
+  const handleRegister = () => {
+    registerDevice({
+      screenWidth: window?.screen?.width ?? 0,
+      screenHeight: window?.screen?.height ?? 0,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      colorDepth: window?.screen?.colorDepth ?? 24,
+      location: null,
+    });
   };
 
-  // Revoke device mutation
-  const revokeDeviceMutation = useMutation({
-    mutationFn: (deviceId) =>
-      api.delete(`/trusted-devices/${deviceId}`, { data: { reason: 'user_initiated' } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['trusted-devices']);
-      setRevokeDialogOpen(false);
-      setSelectedDevice(null);
-      showSnackbar('Device access revoked successfully', 'success');
-    },
-    onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to revoke device';
-      showSnackbar(message, 'error');
-    }
-  });
-
-  // Trust pending device mutation
-  const trustDeviceMutation = useMutation({
-    mutationFn: (deviceId) =>
-      api.post(`/trusted-devices/${deviceId}/trust` ,  { trustDays: 30 }),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['trusted-devices']);
-      showSnackbar('Device marked as trusted', 'success');
-    },
-    onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to trust device';
-      showSnackbar(message, 'error');
-    }
-  });
-
-  // Revoke all devices mutation
- const revokeAllMutation = useMutation({
-  mutationFn: () =>
-    api.post('/trusted-devices/emergency/revoke-all', {
-      reason: 'User initiated security action'
-    }),
-    onSuccess: async () => {
-      queryClient.clear();
-      setRevokeAllDialogOpen(false);
-      showSnackbar('All devices revoked. Please sign in again.', 'success');
-      // Logout user after brief delay
-      setTimeout(() => {
-        auth.logout();
-      }, 2000);
-    },
-    onError: (error) => {
-      const message = error.response?.data?.message || 'Failed to revoke all devices';
-      showSnackbar(message, 'error');
-    }
-  });
-
-  const showSnackbar = (message, severity = 'success') => {
-    setSnackbarMessage(message);
-    setSnackbarSeverity(severity);
-    setSnackbarOpen(true);
-  };
-
-  const getDeviceIcon = (deviceType) => {
-    const iconProps = { sx: { fontSize: 40 } };
-    switch (deviceType?.toLowerCase()) {
-      case 'mobile':
-        return <PhoneIcon {...iconProps} color="primary" />;
-      case 'tablet':
-        return <TabletIcon {...iconProps} color="primary" />;
-      case 'desktop':
-        return <DesktopIcon {...iconProps} color="primary" />;
-      default:
-        return <LaptopIcon {...iconProps} color="primary" />;
-    }
-  };
-
-  const getTrustStatusChip = (status) => {
-    const statusConfig = {
-      trusted: { label: 'Trusted', color: 'success', icon: <CheckCircleIcon /> },
-      pending: { label: 'Pending Review', color: 'warning', icon: <WarningIcon /> },
-      revoked: { label: 'Revoked', color: 'error', icon: <DeleteIcon /> },
-      expired: { label: 'Expired', color: 'default', icon: <AccessTimeIcon /> }
-    };
-
-    const config = statusConfig[status] || statusConfig.pending;
-    return (
-      <Chip
-        label={config.label}
-        color={config.color}
-        size="small"
-        icon={config.icon}
-        variant="outlined"
-      />
-    );
-  };
-
-  const getRiskLevelConfig = (level) => {
-    const configs = {
-      LOW: { color: 'success', label: 'Low Risk', icon: <CheckCircleIcon /> },
-      MEDIUM: { color: 'warning', label: 'Medium Risk', icon: <WarningIcon /> },
-      HIGH: { color: 'error', label: 'High Risk', icon: <AlertTriangleIcon /> }
-    };
-    return configs[level] || configs.MEDIUM;
-  };
-
-  if (isLoading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
-    );
+  if (isPending) {
+    return <LoadingSpinner message="Fetching trusted devices…" />;
   }
 
   if (error) {
     return (
-      <Alert severity="error">
-        Failed to load trusted devices. Please try refreshing the page.
+      <Alert severity="error" color="error">
+        Unable to load trusted devices. Please refresh the page or try again later.
       </Alert>
     );
   }
 
-  const activeTrustedDevices = devices.filter(d => d.trust_status === 'trusted').length;
-  const pendingDevices = devices.filter(d => d.trust_status === 'pending').length;
-
   return (
-    <Box>
-      {/* Security Overview Card - Gradient Header */}
-      <Card
-        sx={{
-          mb: 3,
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white'
-        }}
-      >
-        <CardContent>
-          <Box display="flex" alignItems="center" mb={2}>
-            <ShieldIcon sx={{ fontSize: 40, mr: 2 }} />
-            <Box>
-              <Typography variant="h5">Device Security Overview</Typography>
-              <Typography variant="caption">
-                Manage and monitor all your trusted devices
-              </Typography>
-            </Box>
-          </Box>
+    <Box component={motion.div} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+      <Grid container spacing={3} mb={3}>
+        <Grid item xs={12} md={3}>
+          <MetricCard title="Registered" value={summary.total} helper="Total devices" gradient />
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <MetricCard title="Trusted" value={summary.trusted} helper="Verified devices" color="success" />
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <MetricCard title="Pending" value={summary.pending} helper="Awaiting confirmation" color="warning" />
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <MetricCard title="Risk" value={summary.highRisk} helper="High risk logins" color={summary.highRisk > 0 ? 'error' : 'success'} />
+        </Grid>
+      </Grid>
 
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} sm={3}>
-              <Box textAlign="center">
-                <Typography variant="h3">{devices.length}</Typography>
-                <Typography variant="body2">Registered Devices</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box textAlign="center">
-                <Typography variant="h3">{activeTrustedDevices}</Typography>
-                <Typography variant="body2">Trusted</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box textAlign="center">
-                <Typography variant="h3">{pendingDevices}</Typography>
-                <Typography variant="body2">Pending Review</Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box textAlign="center">
-                <Typography variant="h3">
-                  {securityInsights.exposureLevel || 'Low'}
-                </Typography>
-                <Typography variant="body2">Exposure Risk</Typography>
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Security Recommendations */}
-      {pendingDevices > 0 && (
-        <Alert severity="warning" sx={{ mb: 3, display: 'flex', alignItems: 'center' }}>
-          <AlertTriangleIcon sx={{ mr: 1 }} />
-          You have {pendingDevices} device{pendingDevices > 1 ? 's' : ''} awaiting trust confirmation.
-          Please review and trust or revoke unrecognized devices.
+      {summary.highRisk > 0 && (
+        <Alert severity="warning" icon={<WarningIcon fontSize="inherit" />} sx={{ mb: 3 }}>
+          We detected {summary.highRisk} high-risk device{s(summary.highRisk)}. Review and revoke unfamiliar devices immediately.
         </Alert>
       )}
 
-      {/* Auto-trust toggle */}
-      <Paper sx={{ p: 2, mb: 3, bgcolor: 'action.hover' }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="subtitle1" fontWeight="bold">
-              Auto-Trust This Browser
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Automatically trust devices on subsequent logins
-            </Typography>
-          </Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={autoTrustEnabled}
-                onChange={(e) => setAutoTrustEnabled(e.target.checked)}
-              />
-            }
-            label=""
-          />
-        </Box>
-      </Paper>
-
-      {/* Main Devices Card */}
-      <Card>
+      <MotionCard initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+        <CardHeader
+          title="Trusted devices"
+          subheader="Devices that have accessed your account"
+          action={
+            <Stack direction="row" spacing={1}>
+              <Button
+                variant="outlined"
+                startIcon={<RefreshIcon />}
+                onClick={() => queryClient.invalidateQueries({ queryKey: ['devices', 'trusted'] })}
+              >
+                Refresh
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<DeviceIcon />}
+                onClick={handleRegister}
+                disabled={registering}
+              >
+                {registering ? 'Registering…' : 'Register this device'}
+              </Button>
+            </Stack>
+          }
+        />
         <CardContent>
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-            <Box>
-              <Typography variant="h6">Your Devices</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {devices.length} device{devices.length !== 1 ? 's' : ''} registered
-              </Typography>
-            </Box>
-            <Button
-              variant="outlined"
-              onClick={() => refetch()}
-              startIcon={<RefreshIcon />}
-              size="small"
-            >
-              Refresh
-            </Button>
-          </Box>
-
           {devices.length === 0 ? (
-            <Alert severity="info">
-              No devices found. The current device will be registered automatically.
-            </Alert>
+            <EmptyState message="No devices registered yet. We’ll automatically register this browser after your next login." />
           ) : (
-            <List sx={{ width: '100%' }}>
-              {devices.map((device, index) => {
-                const riskConfig = getRiskLevelConfig(device.risk_level);
-                const isCurrent = device.id === currentDeviceId;
+            <Stack spacing={2.5}>
+              {devices.map((device) => {
+                const status = trustStatusCopy[device.trust_status] || trustStatusCopy.pending;
+                const riskTone = device.risk_level === 'HIGH' ? 'error' : device.risk_level === 'MEDIUM' ? 'warning' : 'default';
 
                 return (
-                  <Box key={device.id}>
-                    <ListItem
-                      sx={{
-                        bgcolor: isCurrent ? 'action.selected' : 'transparent',
-                        borderRadius: 1,
-                        mb: 1,
-                        p: 2,
-                        border: '1px solid',
-                        borderColor: isCurrent ? 'primary.main' : 'divider',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <ListItemAvatar>
-                        <Avatar
-                          sx={{
-                            bgcolor: isCurrent ? 'primary.main' : 'action.hover',
-                            width: 56,
-                            height: 56
-                          }}
-                        >
-                          {getDeviceIcon(device.device_type)}
-                        </Avatar>
-                      </ListItemAvatar>
-
-                      <ListItemText
-                        primary={
-                          <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                            <Typography variant="subtitle1" fontWeight="bold">
-                              {device.device_name}
-                            </Typography>
-                            {isCurrent && (
-                              <Chip
-                                label="Current Device"
-                                size="small"
-                                color="primary"
-                                variant="filled"
-                              />
-                            )}
-                            {getTrustStatusChip(device.trust_status)}
-                          </Box>
-                        }
-                        secondary={
-                          <Box mt={1}>
-                            <Box display="flex" gap={1} flexWrap="wrap" mb={1}>
-                              <Chip
-                                icon={<LocationIcon />}
-                                label={device.location || 'Unknown Location'}
-                                size="small"
-                                variant="outlined"
-                              />
-                              <Chip
-                                label={device.ip_address}
-                                size="small"
-                                variant="outlined"
-                              />
-                              <Chip
-                                icon={<AccessTimeIcon />}
-                                label={formatDistanceToNow(new Date(device.last_used), {
-                                  addSuffix: true
-                                })}
-                                size="small"
-                                variant="outlined"
-                              />
-                              <Chip
-                                label={riskConfig.label}
-                                size="small"
-                                variant="filled"
-                                color={riskConfig.color}
-                                icon={riskConfig.icon}
-                              />
-                            </Box>
-                            <Typography variant="caption" display="block" color="text.secondary">
-                              {device.browser} on {device.os} {device.os_version}
-                            </Typography>
-                            {device.trust_status === 'pending' && (
-                              <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                                ⚠️ Awaiting your confirmation
-                              </Typography>
-                            )}
-                          </Box>
-                        }
-                      />
-
-                      <Box display="flex" gap={1} alignItems="center" ml={2}>
+                  <Box key={device.id} sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', backgroundColor: 'background.paper' }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} justifyContent="space-between">
+                      <Stack spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} direction={{ xs: 'column', sm: 'row' }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>{device.device_type?.[0]?.toUpperCase() || 'D'}</Avatar>
+                        <Box>
+                          <Typography variant="subtitle1" fontWeight={600}>{device.device_name}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {device.browser} • {device.os} {device.os_version}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        <Chip label={status.label} color={status.color} size="small" />
+                        <Chip label={device.location || 'Unknown location'} variant="outlined" size="small" />
+                        <Chip label={formatDistanceToNow(new Date(device.last_used), { addSuffix: true })} variant="outlined" size="small" />
+                        <Chip label={`${device.risk_level || 'LOW'} risk`} color={riskTone} size="small" variant={riskTone === 'default' ? 'outlined' : 'filled'} />
+                      </Stack>
+                    </Stack>
+                    <Divider sx={{ my: 2 }} />
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                      <Typography variant="caption" color="text.secondary">
+                        IP • {device.ip_address}
+                      </Typography>
+                      <Stack direction="row" spacing={1}>
                         {device.trust_status === 'pending' && (
-                          <Button
-                            variant="contained"
-                            size="small"
-                            onClick={() => trustDeviceMutation.mutate(device.id)}
-                            disabled={trustDeviceMutation.isLoading}
-                          >
-                            Trust
+                          <Button size="small" variant="contained" color="primary" startIcon={<CheckIcon />} onClick={() => trustDevice(device.id)} disabled={trusting}>
+                            Approve
                           </Button>
                         )}
-
-                        {!isCurrent && (
-                          <Tooltip title="Revoke Device">
-                            <IconButton
-                              color="error"
-                              size="small"
-                              onClick={() => {
-                                setSelectedDevice(device);
-                                setRevokeDialogOpen(true);
-                              }}
-                              disabled={revokeDeviceMutation.isLoading}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-
-                        <Tooltip title="View Details">
-                          <IconButton
-                            size="small"
-                            onClick={() => setSelectedDevice(device)}
-                          >
-                            <InfoIcon />
+                        <Tooltip title="Revoke device">
+                          <IconButton color="error" onClick={() => setSelectedDevice(device)} disabled={revoking}>
+                            <DeleteIcon />
                           </IconButton>
                         </Tooltip>
-                      </Box>
-                    </ListItem>
-
-                    {index < devices.length - 1 && <Divider />}
+                      </Stack>
+                    </Stack>
                   </Box>
                 );
               })}
-            </List>
+            </Stack>
           )}
         </CardContent>
-      </Card>
+      </MotionCard>
 
-      {/* Emergency Actions */}
-      <Alert severity="error" sx={{ mt: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="subtitle2">Security Concern?</Typography>
-            <Typography variant="caption">
-              If you suspect unauthorized access, revoke all devices immediately.
-            </Typography>
-          </Box>
-          <Button
-            color="error"
-            variant="contained"
-            onClick={() => setRevokeAllDialogOpen(true)}
-            size="small"
-          >
-            Revoke All
-          </Button>
-        </Box>
-      </Alert>
-
-      {/* Device Details Dialog */}
-      <Dialog
-        open={selectedDevice && !revokeDialogOpen}
-        onClose={() => setSelectedDevice(null)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Device Details</DialogTitle>
-        <DialogContent dividers>
-          {selectedDevice && (
+      {devices.length > 0 && (
+        <Alert severity="error" sx={{ mt: 4 }} icon={<ShieldIcon fontSize="inherit" />}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
             <Box>
-              <Box display="flex" alignItems="center" mb={3}>
-                <Avatar sx={{ bgcolor: 'primary.main', width: 64, height: 64, mr: 2 }}>
-                  {getDeviceIcon(selectedDevice.device_type)}
-                </Avatar>
-                <Box>
-                  <Typography variant="h6">{selectedDevice.device_name}</Typography>
-                  {getTrustStatusChip(selectedDevice.trust_status)}
-                </Box>
-              </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              <Grid container spacing={2}>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Device Type
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {selectedDevice.device_type}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    Browser
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {selectedDevice.browser}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    OS
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {selectedDevice.os} {selectedDevice.os_version}
-                  </Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">
-                    IP Address
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {selectedDevice.ip_address}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="caption" color="text.secondary">
-                    Location
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {selectedDevice.location || 'Unknown'}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="caption" color="text.secondary">
-                    Last Used
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5 }}>
-                    {format(new Date(selectedDevice.last_used), 'PPpp')}
-                  </Typography>
-                </Grid>
-                {selectedDevice.expires_at && (
-                  <Grid item xs={12}>
-                    <Typography variant="caption" color="text.secondary">
-                      Expires At
-                    </Typography>
-                    <Typography variant="body2" sx={{ mt: 0.5 }}>
-                      {format(new Date(selectedDevice.expires_at), 'PPpp')}
-                    </Typography>
-                  </Grid>
-                )}
-                <Grid item xs={12}>
-                  <Typography variant="caption" color="text.secondary">
-                    Risk Level
-                  </Typography>
-                  <Box sx={{ mt: 0.5 }}>
-                    {(() => {
-                      const config = getRiskLevelConfig(selectedDevice.risk_level);
-                      return (
-                        <Chip
-                          label={config.label}
-                          color={config.color}
-                          icon={config.icon}
-                        />
-                      );
-                    })()}
-                  </Box>
-                </Grid>
-              </Grid>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSelectedDevice(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Revoke Device Dialog */}
-      <Dialog open={revokeDialogOpen} onClose={() => setRevokeDialogOpen(false)}>
-        <DialogTitle>Revoke Device Access?</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            This action will remove trust for this device. You'll need to verify your
-            identity again when signing in from this device.
-          </Alert>
-          {selectedDevice && (
-            <Box>
-              <Typography variant="body2">
-                <strong>Device:</strong> {selectedDevice.device_name}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Location:</strong> {selectedDevice.location || 'Unknown'}
-              </Typography>
-              <Typography variant="body2">
-                <strong>IP Address:</strong> {selectedDevice.ip_address}
+              <Typography variant="subtitle2">Need to revoke everything?</Typography>
+              <Typography variant="caption" color="text.secondary">
+                If you suspect unauthorised access, revoke trust from all devices immediately.
               </Typography>
             </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRevokeDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={() => revokeDeviceMutation.mutate(selectedDevice?.id)}
-            color="error"
-            variant="contained"
-            disabled={revokeDeviceMutation.isLoading}
-          >
-            {revokeDeviceMutation.isLoading ? 'Revoking...' : 'Revoke Access'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            <Button variant="contained" color="error" onClick={() => setConfirmRevokeAll(true)} disabled={revokingAll}>
+              {revokingAll ? 'Revoking…' : 'Revoke all devices'}
+            </Button>
+          </Stack>
+        </Alert>
+      )}
 
-      {/* Revoke All Devices Dialog */}
-      <Dialog open={revokeAllDialogOpen} onClose={() => setRevokeAllDialogOpen(false)}>
-        <DialogTitle>Revoke All Devices?</DialogTitle>
+      <Dialog open={Boolean(selectedDevice)} onClose={() => setSelectedDevice(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Revoke device access</DialogTitle>
         <DialogContent>
-          <Alert severity="error" sx={{ mb: 2 }}>
-            <strong>Warning!</strong> This will immediately log you out from all devices.
-            You'll need to sign in again on each device.
-          </Alert>
-          <Typography variant="body2">
-            This action is recommended if you believe your account has been compromised or
-            if you've lost a device.
+          <Typography variant="body2" gutterBottom>
+            Are you sure you want to revoke trust for <strong>{selectedDevice?.device_name}</strong>?
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            The next time you sign in on this device you will need to complete the MFA flow again.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRevokeAllDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setSelectedDevice(null)}>Cancel</Button>
           <Button
-            onClick={() => revokeAllMutation.mutate()}
+            onClick={() => {
+              if (selectedDevice) revokeDevice(selectedDevice.id);
+              setSelectedDevice(null);
+            }}
             color="error"
             variant="contained"
-            disabled={revokeAllMutation.isLoading}
+            disabled={revoking}
           >
-            {revokeAllMutation.isLoading ? 'Processing...' : 'Revoke All'}
+            {revoking ? 'Revoking…' : 'Revoke device'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmRevokeAll} onClose={() => setConfirmRevokeAll(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Revoke all devices</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" gutterBottom>
+            This action will remove trust from every registered device. You will be signed out everywhere.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Continue only if you believe your account is at risk.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmRevokeAll(false)}>Cancel</Button>
+          <Button onClick={() => { revokeAll(); setConfirmRevokeAll(false); }} color="error" variant="contained" disabled={revokingAll}>
+            {revokingAll ? 'Revoking…' : 'Revoke all'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -662,4 +254,40 @@ const securityInsights = devicesData.insights || {};
   );
 }
 
-export default TrustedDevices;
+function MetricCard({ title, value, helper, gradient = false, color = 'primary' }) {
+  return (
+    <MotionCard
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      sx={{
+        height: '100%',
+        background: gradient ? 'linear-gradient(135deg, rgba(37,99,235,0.16) 0%, rgba(124,58,237,0.14) 100%)' : undefined,
+      }}
+    >
+      <CardContent>
+        <Typography variant="caption" color="text.secondary" textTransform="uppercase" letterSpacing={0.4}>
+          {title}
+        </Typography>
+        <Typography variant="h4" fontWeight={700} mt={0.5} color={`${color}.main`}>
+          {value}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {helper}
+        </Typography>
+      </CardContent>
+    </MotionCard>
+  );
+}
+
+function EmptyState({ message }) {
+  return (
+    <Box sx={{ textAlign: 'center', py: 6 }}>
+      <Typography variant="body2" color="text.secondary">{message}</Typography>
+    </Box>
+  );
+}
+
+function s(value) {
+  return value === 1 ? '' : 's';
+}

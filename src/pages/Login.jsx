@@ -10,59 +10,61 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ClientCard from '../components/ClientCard';
 
 export default function Login() {
-  const { client, redirect_uri } = getQueryParams(window.location.search); // ✅ Remove state
+  const { client, redirect_uri } = getQueryParams(window.location.search);
   const navigate = useNavigate();
   const [clientInfo, setClientInfo] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // ✅ Determine which client we're serving
-    let currentClient = client;
-    let currentRedirectUri = redirect_uri;
+  // Resolve client
+  let currentClient = client || "account-ui";
 
-    // If no client specified, default to account-ui
-    if (!currentClient && !currentRedirectUri) {
-      currentClient = 'account-ui';
-      currentRedirectUri = getClientConfig(currentClient).redirectUrl;
-    }
+  // Always take redirect URL from registry
+  const registryConfig = getClientConfig(currentClient);
+  let currentRedirectUri = registryConfig.redirectUrl;
 
-    console.log('Centralized Login serving client:', {
-      requestedClient: client,
-      resolvedClient: currentClient,
-      redirectUri: currentRedirectUri
-    });
+  console.log('Centralized Login serving client:', {
+    requestedClient: client,
+    resolvedClient: currentClient,
+    redirectUri: currentRedirectUri
+  });
 
-    // Check if already authenticated
-    const token = auth.getToken();
-    if (token && !auth.isTokenExpired(token)) {
-      const destination = currentClient === 'account-ui'
-        ? '/profile'
-        : `${currentRedirectUri || getClientConfig(currentClient).redirectUrl}/callback?access_token=${token}`;
-      
-      console.log('Already authenticated, redirecting to:', destination);
-      window.location.href = destination;
-      return;
-    }
+  // Check if already authenticated
+  const token = auth.getToken();
+  if (token && !auth.isTokenExpired(token)) {
+    const destination = currentClient === 'account-ui'
+      ? '/profile'
+      : `${currentRedirectUri}/callback?access_token=${token}`;
+    
+    console.log('Already authenticated, redirecting to:', destination);
+    window.location.href = destination;
+    return;
+  }
 
-    // ✅ Get client-specific configuration for display
-    const clientConfig = getClientConfig(currentClient);
-    setClientInfo({
-      ...clientConfig,
-      clientKey: currentClient, // Store the actual client key
-      redirectUrl: currentRedirectUri || clientConfig.redirectUrl
-    });
+  // Load client info
+  setClientInfo({
+    ...registryConfig,
+    clientKey: currentClient,
+    redirectUrl: currentRedirectUri
+  });
 
-    console.log('Displaying login for client:', clientConfig);
-  }, [client, redirect_uri]);
+  console.log('Displaying login for client:', registryConfig);
+}, [client, redirect_uri]);
+
 
   const onLogin = () => {
     if (!clientInfo) return;
     
     setLoading(true);
-    console.log('Initiating login for:', clientInfo.clientKey);
-    
-    // ✅ Use the dynamic client info
-    auth.login(clientInfo.clientKey, clientInfo.redirectUrl);
+    console.log('🔐 Redirecting to auth service for:', clientInfo.clientKey);
+
+    try {
+      auth.login(clientInfo.clientKey, clientInfo.redirectUrl);
+    } catch (error) {
+      console.error('❌ Failed to initiate login:', error);
+      setLoading(false);
+      alert('Failed to start login. Please try again.');
+    }
   };
 
   if (!clientInfo) return <LoadingSpinner />;

@@ -21,6 +21,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow, format } from 'date-fns';
 import { auth } from '@spidy092/auth-client';
 import TwoFactorAuth from './TwoFactorSetup';
+import { securityApi } from '../api/security.api';
 
 function SecuritySettings() {
   const queryClient = useQueryClient();
@@ -43,7 +44,7 @@ function SecuritySettings() {
   // Fetch security settings
   const { data: security = {}, isLoading: securityLoading, error: securityError } = useQuery({
     queryKey: ['security-settings'],
-    queryFn: () => auth.api.get('/account/security').then(res => res.data),
+    queryFn: securityApi.getOverview,
     retry: 3,
     staleTime: 5 * 60 * 1000,
   });
@@ -51,23 +52,20 @@ function SecuritySettings() {
   // Fetch security events
   const { data: securityEvents = [], isLoading: eventsLoading } = useQuery({
     queryKey: ['security-events'],
-    queryFn: () => auth.api.get('/account/security-events').then(res => res.data),
+    queryFn: securityApi.getEvents,
     refetchInterval: 5 * 60 * 1000,
     retry: 2,
   });
   
   const { data: twoFAStatus, isLoading: twoFALoading } = useQuery({
-  queryKey: ['2fa-status'],
-  queryFn: () => auth.api.get('/account/2fa/status').then(res => res.data),
-  staleTime: 2 * 60 * 1000,
-});
+    queryKey: ['2fa-status'],
+    queryFn: securityApi.getStatus,
+    staleTime: 2 * 60 * 1000,
+  });
   // Change password mutation
   // SecuritySettings.jsx - Update the changePasswordMutation
 const changePasswordMutation = useMutation({
-  mutationFn: async (passwordData) => {
-    const response = await auth.api.post('/account/change-password', passwordData);
-    return response.data;
-  },
+  mutationFn: securityApi.changePassword,
   onSuccess: async (data) => {
     // ✅ Enhanced cache invalidation - Replace your existing onSuccess
     await Promise.all([
