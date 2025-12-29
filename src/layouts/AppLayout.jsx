@@ -191,12 +191,17 @@ export default function AppLayout() {
                   px: 1.5,
                   '&.Mui-selected': {
                     background: theme.palette.mode === 'dark'
-                      ? 'linear-gradient(135deg, rgba(37,99,235,0.22) 0%, rgba(124,58,237,0.18) 100%)'
-                      : 'linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(124,58,237,0.1) 100%)',
+                      ? 'linear-gradient(135deg, rgba(217,207,199,0.2) 0%, rgba(201,181,156,0.15) 100%)'
+                      : 'linear-gradient(135deg, rgba(201,181,156,0.2) 0%, rgba(168,148,125,0.12) 100%)',
                     color: theme.palette.text.primary,
                     '& .MuiListItemIcon-root': {
-                      color: theme.palette.primary.main,
+                      color: theme.palette.primary.dark,
                     },
+                  },
+                  '&:hover': {
+                    background: theme.palette.mode === 'dark'
+                      ? 'rgba(255,255,255,0.05)'
+                      : 'rgba(0,0,0,0.04)',
                   },
                 }}
               >
@@ -246,6 +251,22 @@ export default function AppLayout() {
               borderRight: `1px solid ${theme.palette.divider}`,
               boxSizing: 'border-box',
               backgroundColor: theme.palette.background.paper,
+              // Fix scroll - hide scrollbar but allow scrolling
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              '&::-webkit-scrollbar': {
+                width: 6,
+              },
+              '&::-webkit-scrollbar-track': {
+                background: 'transparent',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                borderRadius: 3,
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                background: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+              },
             },
           }}
         >

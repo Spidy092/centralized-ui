@@ -1,63 +1,4 @@
-// import { auth } from '@spidy092/auth-client';
-
-// export const authConfig = {
-//   clientKey: 'centralized-login',
-//   authBaseUrl: 'http://localhost:4000/auth',
-//   redirectUri: `${window.location.origin}/callback`,
-//   accountUiUrl: window.location.origin, // This app IS the account UI
-// };
-
-// auth.setConfig({
-//   clientKey: 'account-ui',
-//   authBaseUrl: 'http://localhost:4000/auth',
-//   accountUiUrl: 'http://localhost:5173',
-//   redirectUri: 'http://localhost:5173/callback'
-// });
-
-// // Initialize the auth client
-// auth.setConfig(authConfig);
-
-// // Client configurations for different apps
-// export const CLIENT_CONFIGS = {
-//   'pms': {
-//     name: 'Property Management System',
-//     description: 'Manage properties, tenants, and lease agreements',
-//     icon: '🏢',
-//     primaryColor: '#10B981',
-//     redirectUrl: 'http://pms.localhost:3000',
-//     features: ['Property Management', 'Tenant Portal', 'Maintenance Tracking']
-//   },
-//   'analytics': {
-//     name: 'Analytics Dashboard',
-//     description: 'View reports, metrics, and business insights',
-//     icon: '📊',
-//     primaryColor: '#8B5CF6', 
-//     redirectUrl: 'http://analytics.localhost:3000',
-//     features: ['Reports', 'Data Visualization', 'Export Tools']
-//   },
-//   'crm': {
-//     name: 'Customer Relationship Management',
-//     description: 'Manage customer relationships and sales',
-//     icon: '🤝',
-//     primaryColor: '#F59E0B',
-//     redirectUrl: 'http://crm.localhost:3000',
-//     features: ['Contact Management', 'Sales Pipeline', 'Communications']
-//   },
-//   'account-ui': {
-//     name: 'Account Management',
-//     description: 'Manage your profile, security, and preferences',
-//     icon: '⚙️',
-//     primaryColor: '#3B82F6',
-//     redirectUrl: window.location.origin + '/profile',
-//     features: ['Profile Management', 'Security Settings', 'Session Management']
-//   }
-// };
-
-// export const getClientConfig = (clientId) => {
-//   return CLIENT_CONFIGS[clientId] || CLIENT_CONFIGS['account-ui'];
-// };
-
-
+// centralized-login/src/config/authConfig.js
 import { auth } from '@spidy092/auth-client';
 
 const config = {
@@ -65,30 +6,164 @@ const config = {
   authBaseUrl: import.meta.env.VITE_AUTH_BASE_URL,
   accountUiUrl: import.meta.env.VITE_ACCOUNT_UI_URL,
   redirectUri: import.meta.env.VITE_REDIRECT_URI,
-    isRouter: true
+  isRouter: true,
+
+  // ========== SESSION SECURITY CONFIGURATION ==========
+  tokenRefreshBuffer: 60,
+  sessionValidationInterval: 2 * 60 * 1000,
+  idleTimeoutMs: 30 * 60 * 1000,
+  enableSessionValidation: true,
+  enableProactiveRefresh: true,
+  validateOnVisibility: true,
+  enableIdleTimeout: true,
 };
 
 console.log('🔑 Auth config:', config);
-
 auth.setConfig(config);
 
+// ========== CROSS-TAB LOGOUT SYNC ==========
+const AUTH_CHANNEL_NAME = 'auth_account_ui_channel';
+let authChannel = null;
 
+function initCrossTabSync() {
+  if (typeof BroadcastChannel === 'undefined') {
+    console.warn('⚠️ BroadcastChannel not supported');
+    return;
+  }
 
-// Optional: Start auto-refresh for tokens
-const refreshInterval = auth.startTokenRefresh();
+  authChannel = new BroadcastChannel(AUTH_CHANNEL_NAME);
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
+  authChannel.onmessage = (event) => {
+    const { type, reason } = event.data;
+
+    if (type === 'LOGOUT') {
+      console.log('📢 Logout from another tab:', reason);
+      auth.clearToken();
+      auth.clearRefreshToken();
+      stopSessionSecurity();
+
+      const loginUrl = new URL('/login', window.location.origin);
+      loginUrl.searchParams.set('expired', 'true');
+      loginUrl.searchParams.set('reason', reason || 'logout_from_other_tab');
+      window.location.href = loginUrl.toString();
+    }
+  };
+
+  console.log('📡 Cross-tab sync initialized');
+}
+
+function broadcastLogout(reason) {
+  if (authChannel) {
+    console.log('📢 Broadcasting logout:', reason);
+    authChannel.postMessage({ type: 'LOGOUT', reason });
+  }
+}
+
+function closeCrossTabSync() {
+  if (authChannel) {
+    authChannel.close();
+    authChannel = null;
+  }
+}
+
+initCrossTabSync();
+
+// ========== SESSION SECURITY ==========
+let sessionSecurityCleanup = null;
+let idleTimer = null;
+let lastActivityTime = Date.now();
+
+function resetIdleTimer() {
+  lastActivityTime = Date.now();
+}
+
+function stopSessionSecurity() {
+  if (sessionSecurityCleanup) {
+    sessionSecurityCleanup.stopAll();
+    sessionSecurityCleanup = null;
+  }
+  if (idleTimer) {
+    clearInterval(idleTimer);
+    idleTimer = null;
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('mousemove', resetIdleTimer);
+    document.removeEventListener('keydown', resetIdleTimer);
+    document.removeEventListener('click', resetIdleTimer);
+    document.removeEventListener('scroll', resetIdleTimer);
+  }
+}
+
+function handleSessionExpired(reason) {
+  console.log('🚨 Session expired:', reason);
+  auth.clearToken();
+  auth.clearRefreshToken();
+  broadcastLogout(reason); // ✅ Notify other tabs
+
+  const loginUrl = new URL('/login', window.location.origin);
+  loginUrl.searchParams.set('expired', 'true');
+  loginUrl.searchParams.set('reason', reason);
+  window.location.href = loginUrl.toString();
+}
+
+function startSessionSecurity() {
+  console.log('🔐 Starting session security');
+  stopSessionSecurity();
+  lastActivityTime = Date.now();
+
+  // Start auth-client's built-in session security (paths work because authBaseUrl has /auth)
+  sessionSecurityCleanup = auth.startSessionSecurity(handleSessionExpired);
+
+  // Add idle timeout
+  if (config.enableIdleTimeout && typeof document !== 'undefined') {
+    console.log(`⏰ Idle timeout: ${config.idleTimeoutMs / 60000}min`);
+
+    document.addEventListener('mousemove', resetIdleTimer);
+    document.addEventListener('keydown', resetIdleTimer);
+    document.addEventListener('click', resetIdleTimer);
+    document.addEventListener('scroll', resetIdleTimer);
+
+    idleTimer = setInterval(() => {
+      const idleTime = Date.now() - lastActivityTime;
+      if (idleTime > config.idleTimeoutMs) {
+        console.log('⏰ Idle timeout reached');
+        stopSessionSecurity();
+        auth.clearToken();
+        auth.clearRefreshToken();
+        broadcastLogout('idle_timeout');
+        handleSessionExpired('idle_timeout');
+      }
+    }, 60000);
+  }
+}
+
+// Start session security if authenticated
+if (auth.isAuthenticated()) {
+  startSessionSecurity();
+}
+
+// Token listener
+auth.addTokenListener((newToken, oldToken) => {
+  if (newToken && !oldToken) {
+    console.log('🔐 Token acquired');
+    startSessionSecurity();
+  } else if (!newToken && oldToken) {
+    console.log('🔐 Token cleared');
+    stopSessionSecurity();
   }
 });
 
-console.log('🔧 Account UI Auth configured:', {
-  clientKey: 'account-ui',
-  mode: 'ROUTER',
-  authBaseUrl: 'http://auth.local.test:4000/auth'
+// Cleanup on unload
+window.addEventListener('beforeunload', () => {
+  stopSessionSecurity();
+  closeCrossTabSync();
+});
+
+console.log('🔧 Account UI configured with cross-tab sync:', {
+  clientKey: config.clientKey,
+  authBaseUrl: config.authBaseUrl,
+  sessionValidation: config.sessionValidationInterval / 1000 + 's',
+  idleTimeout: config.idleTimeoutMs / 60000 + 'min',
 });
 
 export default config;
-
